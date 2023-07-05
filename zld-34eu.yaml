@@ -1,0 +1,432 @@
+# ESPHome for ZLD-34EU
+# Support timer for each relay, support timer mode by press and hold the power button
+# https://10x.bg/data/content/u/5/upload/Smart%20Home/ZLD-34EU-W%20user%20manual-compressed.pdf
+
+substitutions:
+  devicename: esp-powerstrip-01
+  friendly_devicename: PowerStrip 01
+  api_key: "XXX"
+  ap_password: "YYY"
+
+esphome:
+  name: ${devicename}
+  friendly_name: ${friendly_devicename}
+  platform: esp8266
+  board: esp8285
+  esp8266_restore_from_flash: true
+  on_boot:
+    # set power led depending on 
+    switch.turn_on: refresh_led
+
+# Enable logging
+logger:
+  logs:
+    # hide timer update sensor value change
+    sensor: "None"
+    switch.refresh_led: "None"
+  # level: "VERBOSE"
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: ${api_key}
+
+ota:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: ${devicename}
+    password: ${ap_password}
+
+captive_portal:
+    
+web_server:
+  port: 80
+  ota: False
+  local: true
+  # version: 1
+
+# status_led:
+#   pin: 1
+
+output:
+- platform: esp8266_pwm
+  id: my_status_led_output
+  inverted: true
+  pin: GPIO1
+
+light: 
+- platform: monochromatic
+  name: "Power LED"
+  id: my_status_led
+  output: my_status_led_output  
+  internal: true
+  default_transition_length: 0.3s
+  effects:
+  - pulse:
+  - pulse:
+      name: "Fast Pulse"
+      transition_length: 0.5s
+      update_interval: 0.5s
+      min_brightness: 0%
+      max_brightness: 100%
+  - pulse:
+      name: "Slow Pulse"
+      transition_length: 1s      # defaults to 1s
+      update_interval: 2s
+
+# power button, it's inverted gpio so add a filter, hide as internal sensor
+# tap to toggle on and off, hold to on all and set timer
+binary_sensor:
+  - platform: gpio
+    pin: 
+      number: GPIO3
+      mode: INPUT_PULLUP
+    name: power_button
+    filters:
+      - invert:
+      - delayed_on_off: 10ms
+      - delayed_off: 10ms
+    internal: true
+
+    on_multi_click:
+    # Single Click
+    - timing:
+        - ON for at most 1.2s
+        - OFF for at least 0.1s
+      then:
+        if:
+          # check if all on
+          condition:
+            and:
+              - switch.is_on: relay_socket_1
+              - switch.is_on: relay_socket_2
+              - switch.is_on: relay_socket_3
+              - switch.is_on: relay_usb
+          # turn off all if all on
+          # clear all timer
+          # off status led
+          then:
+            - light.turn_off:
+                id: my_status_led
+            - switch.turn_off: relay_socket_1
+            - number.to_min: timer_socket_1
+            - switch.turn_off: relay_socket_2
+            - number.to_min: timer_socket_2
+            - switch.turn_off: relay_socket_3
+            - number.to_min: timer_socket_3
+            - switch.turn_off: relay_usb
+            - number.to_min: timer_usb
+          # turn on all if all on
+          # clear all timer
+          # solid on status led
+          else:
+            - light.turn_on:
+                id: my_status_led
+                effect: "None"
+            - switch.turn_on: relay_socket_1
+            - number.to_min: timer_socket_1
+            - switch.turn_on: relay_socket_2
+            - number.to_min: timer_socket_2
+            - switch.turn_on: relay_socket_3
+            - number.to_min: timer_socket_3
+            - switch.turn_on: relay_usb
+            - number.to_min: timer_usb
+    # Hold
+    - timing:
+        - ON for at least 1.2s
+      then:
+        # - logger.log: "Hold"
+        # turn on all switch
+        # set timer to all switch
+        # breath status led
+        - light.turn_on:
+            id: my_status_led
+            effect: "Slow Pulse"
+        - switch.turn_on: relay_socket_1
+        - number.set:
+            id: timer_socket_1
+            value: !lambda 'return id(default_timer).state;'
+        - switch.turn_on: relay_socket_2
+        - number.set:
+            id: timer_socket_2
+            value: !lambda 'return id(default_timer).state;'
+        - switch.turn_on: relay_socket_3
+        - number.set:
+            id: timer_socket_3
+            value: !lambda 'return id(default_timer).state;'
+        - switch.turn_on: relay_usb
+        - number.set:
+            id: timer_usb
+            value: !lambda 'return id(default_timer).state;'
+
+# all relay
+switch:
+  - platform: gpio
+    pin: 5
+    name: Socket 1
+    icon: mdi:power-socket-eu
+    id: relay_socket_1
+    restore_mode: RESTORE_DEFAULT_ON   
+    on_turn_on: 
+      switch.turn_on: refresh_led     
+    on_turn_off: 
+      - number.to_min: timer_socket_1
+      - switch.turn_on: refresh_led     
+  - platform: gpio
+    pin: 4
+    name: Socket 2
+    icon: mdi:power-socket-eu
+    id: relay_socket_2
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on: 
+      switch.turn_on: refresh_led     
+    on_turn_off: 
+      - number.to_min: timer_socket_2
+      - switch.turn_on: refresh_led     
+  - platform: gpio
+    pin: 13
+    name: Socket 3
+    icon: mdi:power-socket-eu
+    id: relay_socket_3
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on: 
+      switch.turn_on: refresh_led     
+    on_turn_off: 
+      - number.to_min: timer_socket_3
+      - switch.turn_on: refresh_led   
+  - platform: gpio
+    pin: 14
+    name: USB
+    icon: mdi:usb
+    id: relay_usb
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on: 
+      switch.turn_on: refresh_led     
+    on_turn_off: 
+      - number.to_min: timer_usb
+      - switch.turn_on: refresh_led     
+  - platform: template
+    id: refresh_led
+    turn_on_action:
+      - if:
+          condition:
+            or:
+              - sensor.in_range:
+                  id: counter_socket_1
+                  above: 0.5
+              - sensor.in_range:
+                  id: counter_socket_2
+                  above: 0.5
+              - sensor.in_range:
+                  id: counter_socket_3
+                  above: 0.5
+              - sensor.in_range:
+                  id: counter_usb
+                  above: 0.5
+          then:
+            # timer is running
+            light.turn_on:
+              id: my_status_led
+              effect: "Slow Pulse"
+          else:
+            if:
+              condition:
+                or:
+                  - switch.is_on: relay_socket_1
+                  - switch.is_on: relay_socket_2
+                  - switch.is_on: relay_socket_3
+                  - switch.is_on: relay_usb
+              then:
+                - light.turn_on: my_status_led
+              else:
+                - light.turn_off: my_status_led
+      - switch.turn_off: refresh_led
+
+
+
+# Timer Function
+# timer counter
+number:
+  - platform: template
+    name: "·Default Timer"
+    icon: mdi:timelapse
+    id: default_timer
+    optimistic: true
+    restore_value: true
+    initial_value: 120
+    min_value: 0
+    max_value: 180
+    unit_of_measurement: "min"
+    step: 5
+  - platform: template
+    name: "·Timer 1"
+    icon: mdi:camera-timer
+    id: timer_socket_1
+    optimistic: true
+    min_value: 0
+    max_value: 180
+    unit_of_measurement: "min"
+    step: 5
+    on_value:
+      then:
+        lambda: |-
+          if (x > 0 && !id(relay_socket_1).state) {
+            id(relay_socket_1).turn_on();        
+          }
+          id(counter_socket_1).publish_state(x * 60 - 1);
+          id(refresh_led).turn_on();
+  - platform: template
+    name: "·Timer 2"
+    icon: mdi:camera-timer
+    id: timer_socket_2
+    optimistic: true
+    min_value: 0
+    max_value: 180
+    unit_of_measurement: "min"
+    step: 5
+    on_value:
+      then:
+        lambda: |-
+          if (x > 0 && !id(relay_socket_2).state) {
+            id(relay_socket_2).turn_on();
+          }
+          id(counter_socket_2).publish_state(x * 60 - 1);
+          id(refresh_led).turn_on();
+  - platform: template
+    name: "·Timer 3"
+    icon: mdi:camera-timer
+    id: timer_socket_3
+    optimistic: true
+    min_value: 0
+    max_value: 180
+    unit_of_measurement: "min"
+    step: 5
+    on_value:
+      then:
+        lambda: |-
+          if (x > 0 && !id(relay_socket_3).state) {
+            id(relay_socket_3).turn_on();
+          }
+          id(counter_socket_3).publish_state(x * 60 - 1);
+          id(refresh_led).turn_on();
+  - platform: template
+    name: "·Timer USB"
+    icon: mdi:camera-timer
+    id: timer_usb
+    optimistic: true
+    min_value: 0
+    max_value: 180
+    unit_of_measurement: "min"
+    step: 5
+    on_value:
+      then:
+        lambda: |-
+          if (x > 0 && !id(relay_usb).state) {
+            id(relay_usb).turn_on();
+          }
+          id(counter_usb).publish_state(x * 60 - 1);
+          id(refresh_led).turn_on();
+
+# Timer real counter in seconds   
+sensor:
+  - platform: template
+    id: counter_socket_1
+    internal: true
+  - platform: template
+    id: counter_socket_2
+    internal: true
+  - platform: template
+    id: counter_socket_3
+    internal: true
+  - platform: template
+    id: counter_usb
+    internal: true
+
+
+time:
+  - platform: sntp
+    # ...
+    on_time:
+      # Every seconds
+      - seconds: /1
+        then:
+          lambda: |-
+            auto state = id(counter_socket_1).state;
+            bool timer_running = false;
+            int timer_off_count = 0;
+            if (state > 0) {
+              state -= 1;
+              if (state <= 0) {
+                state = 0;
+                id(relay_socket_1).turn_off();
+                timer_off_count += 1;
+              }
+              else {
+                timer_running = true;
+              }
+              id(counter_socket_1).publish_state(state);
+              auto newtimer = int(ceil(float(state) / 60.0));
+              if (newtimer != id(timer_socket_1).state) {
+              id(timer_socket_1).publish_state(newtimer);
+              }
+            }
+            state = id(counter_socket_2).state;
+            if (state > 0) {
+              state -= 1;
+              if (state <= 0) {
+                state = 0;
+                id(relay_socket_2).turn_off();
+                timer_off_count += 1;
+              }
+              else {
+                timer_running = true;
+              }
+              id(counter_socket_2).publish_state(state);
+              auto newtimer = int(ceil(float(state) / 60.0));
+              if (newtimer != id(timer_socket_2).state) {
+              id(timer_socket_2).publish_state(newtimer);
+              }
+            }
+            state = id(counter_socket_3).state;
+            if (state > 0) {
+              state -= 1;
+              if (state <= 0) {
+                state = 0;
+                id(relay_socket_3).turn_off();
+                timer_off_count += 1;
+              }
+              else {
+                timer_running = true;
+              }
+              id(counter_socket_3).publish_state(state);
+              auto newtimer = int(ceil(float(state) / 60.0));
+              if (newtimer != id(timer_socket_3).state) {
+              id(timer_socket_3).publish_state(newtimer);
+              }
+            }
+            state = id(counter_usb).state;
+            if (state > 0) {
+              state -= 1;
+              if (state <= 0) {
+                state = 0;
+                id(relay_usb).turn_off();
+              }
+              else {
+                timer_running = true;
+              }
+              id(counter_usb).publish_state(state);
+              auto newtimer = int(ceil(float(state) / 60.0));
+              if (newtimer != id(timer_usb).state) {
+              id(timer_usb).publish_state(newtimer);
+              }
+            }
+            if (!timer_running && timer_off_count > 0) {
+              // disable flashing timer
+              id(refresh_led).turn_on();
+            }
+
