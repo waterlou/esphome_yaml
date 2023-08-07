@@ -1,12 +1,9 @@
-# ESPHome for ZLD-34EU
-# Support timer for each relay, support timer mode by press and hold the power button
-# https://10x.bg/data/content/u/5/upload/Smart%20Home/ZLD-34EU-W%20user%20manual-compressed.pdf
-
 substitutions:
   devicename: esp-powerstrip-01
   friendly_devicename: PowerStrip 01
-  api_key: "XXX"
-  ap_password: "YYY"
+  api_key: "XXX="
+  ap_password: "XXX"
+  ota_password: "XXX"
 
 esphome:
   name: ${devicename}
@@ -20,11 +17,13 @@ esphome:
 
 # Enable logging
 logger:
+  level: INFO
+  # level: DEBUG
   logs:
     # hide timer update sensor value change
-    sensor: "None"
-    switch.refresh_led: "None"
-  # level: "VERBOSE"
+    sensor: NONE
+    switch: NONE
+    switch.gpio: INFO
 
 # Enable Home Assistant API
 api:
@@ -32,6 +31,7 @@ api:
     key: ${api_key}
 
 ota:
+  password: ${ota_password}
 
 wifi:
   ssid: !secret wifi_ssid
@@ -215,19 +215,11 @@ switch:
     turn_on_action:
       - if:
           condition:
-            or:
-              - sensor.in_range:
-                  id: counter_socket_1
-                  above: 0.5
-              - sensor.in_range:
-                  id: counter_socket_2
-                  above: 0.5
-              - sensor.in_range:
-                  id: counter_socket_3
-                  above: 0.5
-              - sensor.in_range:
-                  id: counter_usb
-                  above: 0.5
+            lambda: |-
+              return  id(counter_socket_1) > 0 ||
+                      id(counter_socket_2) > 0 ||
+                      id(counter_socket_3) > 0 ||
+                      id(counter_usb) > 0;
           then:
             # timer is running
             light.turn_on:
@@ -278,7 +270,7 @@ number:
           if (x > 0 && !id(relay_socket_1).state) {
             id(relay_socket_1).turn_on();        
           }
-          id(counter_socket_1).publish_state(x * 60 - 1);
+          id(counter_socket_1) = (x * 60 - 1);
           id(refresh_led).turn_on();
   - platform: template
     name: "·Timer 2"
@@ -295,7 +287,7 @@ number:
           if (x > 0 && !id(relay_socket_2).state) {
             id(relay_socket_2).turn_on();
           }
-          id(counter_socket_2).publish_state(x * 60 - 1);
+          id(counter_socket_2) = (x * 60 - 1);
           id(refresh_led).turn_on();
   - platform: template
     name: "·Timer 3"
@@ -312,7 +304,7 @@ number:
           if (x > 0 && !id(relay_socket_3).state) {
             id(relay_socket_3).turn_on();
           }
-          id(counter_socket_3).publish_state(x * 60 - 1);
+          id(counter_socket_3) = (x * 60 - 1);
           id(refresh_led).turn_on();
   - platform: template
     name: "·Timer USB"
@@ -329,104 +321,102 @@ number:
           if (x > 0 && !id(relay_usb).state) {
             id(relay_usb).turn_on();
           }
-          id(counter_usb).publish_state(x * 60 - 1);
+          id(counter_usb) = (x * 60 - 1);
           id(refresh_led).turn_on();
 
-# Timer real counter in seconds   
-sensor:
-  - platform: template
-    id: counter_socket_1
-    internal: true
-  - platform: template
-    id: counter_socket_2
-    internal: true
-  - platform: template
-    id: counter_socket_3
-    internal: true
-  - platform: template
-    id: counter_usb
-    internal: true
+globals:
+  - id: counter_socket_1
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: counter_socket_2
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: counter_socket_3
+    type: int
+    restore_value: no
+    initial_value: '0'
+  - id: counter_usb
+    type: int
+    restore_value: no
+    initial_value: '0'
 
-
-time:
-  - platform: sntp
-    # ...
-    on_time:
-      # Every seconds
-      - seconds: /1
-        then:
-          lambda: |-
-            auto state = id(counter_socket_1).state;
-            bool timer_running = false;
-            int timer_off_count = 0;
-            if (state > 0) {
-              state -= 1;
-              if (state <= 0) {
-                state = 0;
-                id(relay_socket_1).turn_off();
-                timer_off_count += 1;
-              }
-              else {
-                timer_running = true;
-              }
-              id(counter_socket_1).publish_state(state);
-              auto newtimer = int(ceil(float(state) / 60.0));
-              if (newtimer != id(timer_socket_1).state) {
-              id(timer_socket_1).publish_state(newtimer);
-              }
-            }
-            state = id(counter_socket_2).state;
-            if (state > 0) {
-              state -= 1;
-              if (state <= 0) {
-                state = 0;
-                id(relay_socket_2).turn_off();
-                timer_off_count += 1;
-              }
-              else {
-                timer_running = true;
-              }
-              id(counter_socket_2).publish_state(state);
-              auto newtimer = int(ceil(float(state) / 60.0));
-              if (newtimer != id(timer_socket_2).state) {
-              id(timer_socket_2).publish_state(newtimer);
-              }
-            }
-            state = id(counter_socket_3).state;
-            if (state > 0) {
-              state -= 1;
-              if (state <= 0) {
-                state = 0;
-                id(relay_socket_3).turn_off();
-                timer_off_count += 1;
-              }
-              else {
-                timer_running = true;
-              }
-              id(counter_socket_3).publish_state(state);
-              auto newtimer = int(ceil(float(state) / 60.0));
-              if (newtimer != id(timer_socket_3).state) {
-              id(timer_socket_3).publish_state(newtimer);
-              }
-            }
-            state = id(counter_usb).state;
-            if (state > 0) {
-              state -= 1;
-              if (state <= 0) {
-                state = 0;
-                id(relay_usb).turn_off();
-              }
-              else {
-                timer_running = true;
-              }
-              id(counter_usb).publish_state(state);
-              auto newtimer = int(ceil(float(state) / 60.0));
-              if (newtimer != id(timer_usb).state) {
-              id(timer_usb).publish_state(newtimer);
-              }
-            }
-            if (!timer_running && timer_off_count > 0) {
-              // disable flashing timer
-              id(refresh_led).turn_on();
-            }
+interval:
+  - interval: 1s
+    then:
+      lambda: |-
+        auto state = id(counter_socket_1);
+        bool timer_running = false;
+        int timer_off_count = 0;
+        if (state > 0) {
+          state -= 1;
+          if (state <= 0) {
+            state = 0;
+            id(relay_socket_1).turn_off();
+            timer_off_count += 1;
+          }
+          else {
+            timer_running = true;
+          }
+          id(counter_socket_1) = state;
+          auto newtimer = int(ceil(float(state) / 60.0));
+          if (newtimer != id(timer_socket_1).state) {
+          id(timer_socket_1).publish_state(newtimer);
+          }
+        }
+        state = id(counter_socket_2);
+        if (state > 0) {
+          state -= 1;
+          if (state <= 0) {
+            state = 0;
+            id(relay_socket_2).turn_off();
+            timer_off_count += 1;
+          }
+          else {
+            timer_running = true;
+          }
+          id(counter_socket_2) = state;
+          auto newtimer = int(ceil(float(state) / 60.0));
+          if (newtimer != id(timer_socket_2).state) {
+          id(timer_socket_2).publish_state(newtimer);
+          }
+        }
+        state = id(counter_socket_3);
+        if (state > 0) {
+          state -= 1;
+          if (state <= 0) {
+            state = 0;
+            id(relay_socket_3).turn_off();
+            timer_off_count += 1;
+          }
+          else {
+            timer_running = true;
+          }
+          id(counter_socket_3) = state;
+          auto newtimer = int(ceil(float(state) / 60.0));
+          if (newtimer != id(timer_socket_3).state) {
+          id(timer_socket_3).publish_state(newtimer);
+          }
+        }
+        state = id(counter_usb);
+        if (state > 0) {
+          state -= 1;
+          if (state <= 0) {
+            state = 0;
+            id(relay_usb).turn_off();
+          }
+          else {
+            timer_running = true;
+          }
+          id(counter_usb) = state;
+          auto newtimer = int(ceil(float(state) / 60.0));
+          if (newtimer != id(timer_usb).state) {
+          id(timer_usb).publish_state(newtimer);
+          }
+        }
+        if (!timer_running && timer_off_count > 0) {
+          // disable flashing timer
+          id(refresh_led).turn_on();
+        }
 
